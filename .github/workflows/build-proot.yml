@@ -25,18 +25,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: proot-me/proot
-          submodules: recursive  # ✅ FIX: Récupère uthash, cli, etc.
+          submodules: recursive  # ✅ Récupère cli, uthash, etc.
           fetch-depth: 0
 
-      - name: Debug checkout
+      - name: Verify structure
         run: |
-          echo "=== Contents of workspace ==="
-          ls -la
-          echo "=== Checking Makefile ==="
-          test -f Makefile && echo "✅ Makefile exists" || echo "❌ Makefile MISSING"
+          echo "=== Checking src/GNUmakefile ==="
+          test -f src/GNUmakefile && echo "✅ src/GNUmakefile exists" || echo "❌ src/GNUmakefile MISSING"
           echo "=== Checking submodules ==="
-          test -d cli && test -f cli/Makefile && echo "✅ cli submodule OK" || echo "❌ cli submodule MISSING"
-          test -d uthash && test -f uthash/Makefile && echo "✅ uthash submodule OK" || echo "❌ uthash submodule MISSING"
+          test -d cli && echo "✅ cli submodule OK" || echo "❌ cli submodule MISSING"
+          test -d uthash && echo "✅ uthash submodule OK" || echo "❌ uthash submodule MISSING"
 
       - name: Install dependencies
         run: |
@@ -47,7 +45,6 @@ jobs:
         if: ${{ !matrix.use_zig }}
         run: |
           sudo apt-get install -y musl-tools
-          musl-gcc --version
 
       - name: Setup Zig (aarch64 only)
         if: ${{ matrix.use_zig }}
@@ -57,6 +54,7 @@ jobs:
 
       - name: Build static proot
         run: |
+          cd src  # ✅ FIX: On entre dans src où se trouve GNUmakefile
           if [ "${{ matrix.use_zig }}" = "true" ]; then
             echo "Building with Zig for ${{ matrix.arch }}..."
             make STATIC=1 CC="zig cc -target ${{ matrix.zig_target }}"
@@ -64,8 +62,8 @@ jobs:
             echo "Building with musl-gcc for ${{ matrix.arch }}..."
             make STATIC=1 CC=musl-gcc
           fi
-          mv src/proot proot-${{ matrix.arch }}-static
-          chmod +x proot-${{ matrix.arch }}-static
+          mv proot ../proot-${{ matrix.arch }}-static
+          chmod +x ../proot-${{ matrix.arch }}-static
 
       - name: Verify binary
         run: |
