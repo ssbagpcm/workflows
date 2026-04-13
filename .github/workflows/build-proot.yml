@@ -12,40 +12,37 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, aarch64]
-    steps:
-      - uses: actions/checkout@v4
+        include:
+          - arch: x86_64
+            zig_target: x86_64-linux-musl
+          - arch: aarch64
+            zig_target: aarch64-linux-musl
 
-      - name: Install deps
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          repository: proot-me/proot
+          submodules: recursive  # ✅ FIX: Récupère uthash, cli, etc.
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libtalloc-dev git wget
-          # Installer musl pour la compilation statique
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            sudo apt-get install -y musl-tools
-          else
-            # Pour aarch64, on utilise un cross-compiler musl
-            wget https://musl.cc/aarch64-linux-musl-cross.tgz
-            tar xf aarch64-linux-musl-cross.tgz
-            echo "$(pwd)/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
-          fi
+          sudo apt-get install -y build-essential libtalloc-dev
 
-      - name: Clone Proot source
-        run: |
-          git clone https://github.com/proot-me/proot.git proot-src
-          cd proot-src
-          # On prend la branche master pour avoir les dernières features (potentiellement -H)
-          git checkout master
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0  # Version stable recommandée
 
       - name: Build static proot
         run: |
-          cd proot-src
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make STATIC=1 CC=musl-gcc
-            mv src/proot ../proot-x86_64-static
-          else
-            make STATIC=1 CC=aarch64-linux-musl-gcc
-            mv src/proot ../proot-aarch64-static
-          fi
+          # Zig agit comme CC. On force le target musl pour le statique.
+          make STATIC=1 CC="zig cc -target ${{ matrix.zig_target }}"
+          mv src/proot proot-${{ matrix.arch }}-static
+          chmod +x proot-${{ matrix.arch }}-static
+          file proot-${{ matrix.arch }}-static
+          ldd proot-${{ matrix.arch }}-static || echo "✅ Binary is static"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
