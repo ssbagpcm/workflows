@@ -21,25 +21,30 @@ jobs:
             use_zig: true
 
     steps:
-      - name: Checkout Proot with submodules
+      - name: Checkout Proot
         uses: actions/checkout@v4
         with:
           repository: proot-me/proot
-          submodules: recursive  # ✅ Récupère cli, uthash, etc.
           fetch-depth: 0
+
+      - name: Init submodules explicitly
+        run: |
+          # Force l'initialisation récursive des submodules
+          git submodule update --init --recursive
+          echo "=== Checking submodules ==="
+          test -f cli/cli.c && echo "✅ cli/cli.c exists" || echo "❌ cli/cli.c MISSING"
+          test -f uthash/src/uthash.h && echo "✅ uthash exists" || echo "❌ uthash MISSING"
 
       - name: Verify structure
         run: |
           echo "=== Checking src/GNUmakefile ==="
           test -f src/GNUmakefile && echo "✅ src/GNUmakefile exists" || echo "❌ src/GNUmakefile MISSING"
-          echo "=== Checking submodules ==="
-          test -d cli && echo "✅ cli submodule OK" || echo "❌ cli submodule MISSING"
-          test -d uthash && echo "✅ uthash submodule OK" || echo "❌ uthash submodule MISSING"
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libtalloc-dev
+          # linux-libc-dev fournit linux/limits.h
+          sudo apt-get install -y build-essential libtalloc-dev linux-libc-dev
 
       - name: Install musl-tools (x86_64 only)
         if: ${{ !matrix.use_zig }}
