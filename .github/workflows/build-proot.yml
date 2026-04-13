@@ -10,39 +10,68 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
         include:
           - arch: x86_64
-            zig_target: x86_64-linux-musl
+            zig_target: ""
+            use_zig: false
           - arch: aarch64
             zig_target: aarch64-linux-musl
+            use_zig: true
 
     steps:
-      - name: Checkout with submodules
+      - name: Checkout Proot with submodules
         uses: actions/checkout@v4
         with:
           repository: proot-me/proot
           submodules: recursive  # ✅ FIX: Récupère uthash, cli, etc.
+          fetch-depth: 0
+
+      - name: Debug checkout
+        run: |
+          echo "=== Contents of workspace ==="
+          ls -la
+          echo "=== Checking Makefile ==="
+          test -f Makefile && echo "✅ Makefile exists" || echo "❌ Makefile MISSING"
+          echo "=== Checking submodules ==="
+          test -d cli && test -f cli/Makefile && echo "✅ cli submodule OK" || echo "❌ cli submodule MISSING"
+          test -d uthash && test -f uthash/Makefile && echo "✅ uthash submodule OK" || echo "❌ uthash submodule MISSING"
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libtalloc-dev
 
-      - name: Setup Zig
+      - name: Install musl-tools (x86_64 only)
+        if: ${{ !matrix.use_zig }}
+        run: |
+          sudo apt-get install -y musl-tools
+          musl-gcc --version
+
+      - name: Setup Zig (aarch64 only)
+        if: ${{ matrix.use_zig }}
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.11.0  # Version stable recommandée
+          version: 0.11.0
 
       - name: Build static proot
         run: |
-          # Zig agit comme CC. On force le target musl pour le statique.
-          make STATIC=1 CC="zig cc -target ${{ matrix.zig_target }}"
+          if [ "${{ matrix.use_zig }}" = "true" ]; then
+            echo "Building with Zig for ${{ matrix.arch }}..."
+            make STATIC=1 CC="zig cc -target ${{ matrix.zig_target }}"
+          else
+            echo "Building with musl-gcc for ${{ matrix.arch }}..."
+            make STATIC=1 CC=musl-gcc
+          fi
           mv src/proot proot-${{ matrix.arch }}-static
           chmod +x proot-${{ matrix.arch }}-static
+
+      - name: Verify binary
+        run: |
           file proot-${{ matrix.arch }}-static
-          ldd proot-${{ matrix.arch }}-static || echo "✅ Binary is static"
+          echo "=== Checking if static ==="
+          ldd proot-${{ matrix.arch }}-static && echo "❌ Binary is DYNAMIC" || echo "✅ Binary is STATIC"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
