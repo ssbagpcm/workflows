@@ -2,83 +2,44 @@ name: Build Static Proot
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - arch: x86_64
-            zig_target: ""
-            use_zig: false
-          - arch: aarch64
-            zig_target: aarch64-linux-musl
-            use_zig: true
+        arch: [x86_64, aarch64, riscv64]
 
     steps:
-      - name: Checkout Proot
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: proot-me/proot
-          fetch-depth: 0
+          ref: v5.4.0
+          submodules: recursive
 
-      - name: Init submodules explicitly
-        run: |
-          # Force l'initialisation récursive des submodules
-          git submodule update --init --recursive
-          echo "=== Checking submodules ==="
-          test -f cli/cli.c && echo "✅ cli/cli.c exists" || echo "❌ cli/cli.c MISSING"
-          test -f uthash/src/uthash.h && echo "✅ uthash exists" || echo "❌ uthash MISSING"
+      - name: Install deps
+        run: sudo apt-get install -y build-essential libtalloc-dev
 
-      - name: Verify structure
-        run: |
-          echo "=== Checking src/GNUmakefile ==="
-          test -f src/GNUmakefile && echo "✅ src/GNUmakefile exists" || echo "❌ src/GNUmakefile MISSING"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          # linux-libc-dev fournit linux/limits.h
-          sudo apt-get install -y build-essential libtalloc-dev linux-libc-dev
-
-      - name: Install musl-tools (x86_64 only)
-        if: ${{ !matrix.use_zig }}
-        run: |
-          sudo apt-get install -y musl-tools
-
-      - name: Setup Zig (aarch64 only)
-        if: ${{ matrix.use_zig }}
+      - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.11.0
+          version: 0.13.0
 
-      - name: Build static proot
+      - name: Build proot for ${{ matrix.arch }}
         run: |
-          cd src  # ✅ FIX: On entre dans src où se trouve GNUmakefile
-          if [ "${{ matrix.use_zig }}" = "true" ]; then
-            echo "Building with Zig for ${{ matrix.arch }}..."
-            make STATIC=1 CC="zig cc -target ${{ matrix.zig_target }}"
-          else
-            echo "Building with musl-gcc for ${{ matrix.arch }}..."
-            make STATIC=1 CC=musl-gcc
-          fi
+          cd src
+          TARGET="${{ matrix.arch }}-linux-musl"
+          make STATIC=1 CC="zig cc -target $TARGET"
           mv proot ../proot-${{ matrix.arch }}-static
           chmod +x ../proot-${{ matrix.arch }}-static
 
-      - name: Verify binary
+      - name: Show info
         run: |
           file proot-${{ matrix.arch }}-static
-          echo "=== Checking if static ==="
-          ldd proot-${{ matrix.arch }}-static && echo "❌ Binary is DYNAMIC" || echo "✅ Binary is STATIC"
+          echo "=== Is static? ==="
+          ldd proot-${{ matrix.arch }}-static 2>&1 | grep -q "not a dynamic" && echo "✅ STATIC" || echo "Dynamic"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: proot-${{ matrix.arch }}-static
           path: proot-${{ matrix.arch }}-static
-          retention-days: 90
